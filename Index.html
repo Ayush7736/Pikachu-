@@ -2,18 +2,15 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Mirror</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Live Mirror | Pikachu74</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
-        /* ATTENTION TO DETAIL: 
-           Dark mode, clean typography, and responsive video handling.
-        */
         body {
-            background-color: #121212;
-            color: #ffffff;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            font-family: system-ui, -apple-system, sans-serif;
             margin: 0;
             display: flex;
             flex-direction: column;
@@ -23,193 +20,157 @@
             text-align: center;
         }
 
-        h1 { margin-bottom: 10px; font-size: 1.5rem; }
-        p { color: #aaaaaa; margin-bottom: 20px; }
+        .container { width: 90%; max-width: 500px; padding: 20px; }
+        
+        h1 { font-size: 1.8rem; margin-bottom: 0.5rem; color: #38bdf8; }
+        p { color: #94a3b8; margin-bottom: 2rem; }
 
-        /* Buttons */
         .btn {
-            background-color: #3b82f6;
+            background-color: #0284c7;
             color: white;
             border: none;
-            padding: 12px 24px;
-            font-size: 1rem;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: bold;
-            transition: background 0.2s;
-        }
-        .btn:hover { background-color: #2563eb; }
-        .btn:disabled { background-color: #555; cursor: not-allowed; }
-
-        /* Video Containers */
-        video {
-            width: 100%;
-            max-width: 800px;
+            padding: 16px 32px;
+            font-size: 1.1rem;
             border-radius: 12px;
-            background: #000;
-            margin-top: 20px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            cursor: pointer;
+            font-weight: 600;
+            width: 100%;
+            transition: transform 0.1s, background 0.2s;
         }
+        .btn:active { transform: scale(0.98); }
+        .btn:disabled { background-color: #334155; }
 
-        /* QR Code Container */
         #qrcode-container {
             background: white;
             padding: 15px;
-            border-radius: 12px;
-            margin-top: 20px;
-            display: none; /* Hidden until needed */
+            border-radius: 16px;
+            margin: 20px auto;
+            display: inline-block;
         }
 
-        /* Section visibility toggles */
-        .screen { display: none; width: 100%; max-width: 600px; padding: 20px; }
-        .active { display: block; }
+        video {
+            width: 100%;
+            border-radius: 16px;
+            background: #000;
+            margin-top: 20px;
+            border: 2px solid #334155;
+        }
 
+        .screen { display: none; }
+        .active { display: block; }
+        
+        .status-badge {
+            background: #1e293b;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            display: inline-block;
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 <body>
 
-    <div id="screen-landing" class="screen active">
-        <h1>Live Mirror App</h1>
-        <p>Choose your role:</p>
-        <button class="btn" onclick="startHostFlow()">📡 Share My Screen</button>
-        <p style="font-size: 0.8rem; margin-top: 20px;">(Viewers: Just scan the Host's QR code)</p>
-    </div>
-
-    <div id="screen-host" class="screen">
-        <h1>You are Live 🔴</h1>
-        <p>Ask User 2 to scan this with their camera:</p>
-        
-        <div style="display: flex; justify-content: center;">
-            <div id="qrcode-container"></div>
+    <div class="container">
+        <div id="screen-landing" class="screen active">
+            <h1>Live Mirror</h1>
+            <p>Broadcast your screen or camera to someone else instantly.</p>
+            <button class="btn" onclick="startHostFlow()">📡 Start Broadcasting</button>
         </div>
-        
-        <p style="font-size: 0.8rem; margin-top: 10px;">ID: <span id="host-id-display">Generating...</span></p>
-        <button class="btn" onclick="location.reload()" style="background-color: #ef4444; margin-top: 10px;">Stop Sharing</button>
-    </div>
 
-    <div id="screen-viewer" class="screen">
-        <h1>Connect to Stream</h1>
-        <p>Click below to start watching</p>
-        <button id="btn-connect" class="btn" onclick="connectToHost()">▶️ Connect & Play</button>
-        <video id="remote-video" playsinline controls></video>
-        <p id="status-msg" style="margin-top:10px;">Waiting for connection...</p>
+        <div id="screen-host" class="screen">
+            <div class="status-badge">🔴 Live Hosting</div>
+            <p>Scan to watch on another device:</p>
+            <div id="qrcode-container"></div>
+            <div id="host-id-display" style="font-family: monospace; color: #38bdf8;">Connecting...</div>
+            <button class="btn" onclick="location.reload()" style="background:#ef4444; margin-top:30px;">Stop Stream</button>
+        </div>
+
+        <div id="screen-viewer" class="screen">
+            <div class="status-badge">📺 Viewer Mode</div>
+            <button id="btn-connect" class="btn" onclick="connectToHost()">▶️ Click to Start Watching</button>
+            <video id="remote-video" autoplay playsinline controls></video>
+            <p id="status-msg">Ready to connect...</p>
+        </div>
     </div>
 
     <script>
-        // --- CONFIGURATION ---
-        const peer = new Peer(); // Auto-generates an ID from free PeerJS server
+        const peer = new Peer(); 
         let myStream = null;
 
-        // --- 1. INITIALIZATION LOGIC ---
-        // We check the URL to see if we are a "Viewer" (User 2) or a "Host" (User 1)
+        // Auto-detect role on load
         window.onload = () => {
             const urlParams = new URLSearchParams(window.location.search);
             const hostId = urlParams.get('hostId');
-
             if (hostId) {
-                // If there is an ID in the URL, we are USER 2
                 showScreen('screen-viewer');
-                // We save the ID to use when they click "Connect"
                 window.targetHostId = hostId;
-            } else {
-                // If no ID, we are on the landing page (Potential USER 1)
-                // Default is already showing landing page
             }
         };
 
-        // --- 2. HOST LOGIC (USER 1) ---
         async function startHostFlow() {
             try {
-                // ATTENTION TO DETAIL: Capture System Audio + Screen
-                // Note: 'systemAudio' acts as a hint, browser support varies
-                myStream = await navigator.mediaDevices.getDisplayMedia({
-                    video: { cursor: "always" },
-                    audio: {
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        sampleRate: 44100
-                    }
-                });
+                // ATTENTION TO DETAIL: Fallback logic
+                // If Screen Share fails (Mobile), it automatically tries Camera.
+                try {
+                    myStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+                } catch (e) {
+                    console.log("Screen share rejected or not supported, trying camera...");
+                    myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                }
 
-                // Switch UI to Host Screen
                 showScreen('screen-host');
 
-                // Wait for PeerJS to give us an ID
                 peer.on('open', (id) => {
-                    document.getElementById('host-id-display').innerText = id;
+                    document.getElementById('host-id-display').innerText = "ID: " + id;
+                    const smartLink = window.location.origin + window.location.pathname + '?hostId=' + id;
                     
-                    // GENERATE SMART URL
-                    // We create a link like: https://myapp.com/?hostId=abc-123
-                    const smartLink = window.location.href.split('?')[0] + '?hostId=' + id;
-                    
-                    // Generate QR Code with this smart link
+                    // Clear previous QR if any
+                    document.getElementById("qrcode-container").innerHTML = "";
                     new QRCode(document.getElementById("qrcode-container"), {
                         text: smartLink,
-                        width: 180,
-                        height: 180
+                        width: 200,
+                        height: 200,
+                        colorDark : "#000000",
+                        colorLight : "#ffffff",
+                        correctLevel : QRCode.CorrectLevel.H
                     });
-                    document.getElementById("qrcode-container").style.display = "block";
                 });
 
-                // Answer calls automatically
                 peer.on('call', (call) => {
-                    console.log("Viewer connecting...");
-                    call.answer(myStream); // Send our screen to them
+                    call.answer(myStream);
                 });
-
-                // Handle if user stops screen share via browser UI
-                myStream.getVideoTracks()[0].onended = () => {
-                    alert("Screen sharing stopped.");
-                    location.reload();
-                };
 
             } catch (err) {
-                console.error("Failed to get media:", err);
-                alert("Error: " + err.message + ". Please try again and allow permissions.");
+                alert("Could not access camera or screen: " + err.message);
             }
         }
 
-        // --- 3. VIEWER LOGIC (USER 2) ---
         function connectToHost() {
             const hostId = window.targetHostId;
-            const statusMsg = document.getElementById('status-msg');
             const btn = document.getElementById('btn-connect');
             const video = document.getElementById('remote-video');
+            const status = document.getElementById('status-msg');
 
-            btn.disabled = true;
-            btn.innerText = "Connecting...";
+            btn.style.display = 'none';
+            status.innerText = "Connecting to host...";
 
-            // Connect to the Host
-            const call = peer.call(hostId, null); // We send 'null' stream because we are just watching
+            const call = peer.call(hostId, null);
 
             call.on('stream', (remoteStream) => {
-                statusMsg.innerText = "Connected! Feed should appear.";
+                status.innerText = "Live Feed Connected!";
                 video.srcObject = remoteStream;
-                
-                // ATTENTION TO DETAIL: Handle the "Play" promise to avoid browser blocking
-                video.play().catch(err => {
-                    console.error("Autoplay prevented:", err);
-                    statusMsg.innerText = "Click play on the video controls.";
-                });
-            });
-
-            call.on('close', () => {
-                statusMsg.innerText = "Host ended the stream.";
-                alert("Stream ended.");
+                video.play();
             });
 
             peer.on('error', (err) => {
-                statusMsg.innerText = "Connection failed. Is Host still online?";
-                btn.disabled = false;
-                btn.innerText = "Retry Connection";
+                status.innerText = "Connection failed. Make sure the host is still live.";
+                btn.style.display = 'block';
             });
         }
 
-        // --- HELPER UI FUNCTION ---
         function showScreen(screenId) {
-            // Hide all screens
             document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
-            // Show target screen
             document.getElementById(screenId).classList.add('active');
         }
     </script>
