@@ -3,201 +3,91 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Live Mirror Pro | Pikachu74</title>
+    <title>Live Cam Mirror | Pikachu74</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
-        body {
-            background-color: #0f172a;
-            color: #f8fafc;
-            font-family: system-ui, -apple-system, sans-serif;
-            margin: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            text-align: center;
-        }
-
-        .container { width: 90%; max-width: 500px; padding: 20px; }
-        
-        h1 { font-size: 1.8rem; margin-bottom: 0.5rem; color: #38bdf8; }
-        p { color: #94a3b8; margin-bottom: 2rem; }
-
-        .btn {
-            background-color: #0284c7;
-            color: white;
-            border: none;
-            padding: 16px 32px;
-            font-size: 1.1rem;
-            border-radius: 12px;
-            cursor: pointer;
-            font-weight: 600;
-            width: 100%;
-            transition: transform 0.1s, background 0.2s;
-            margin-bottom: 10px;
-        }
-        .btn:active { transform: scale(0.98); }
-        .btn:disabled { background-color: #334155; }
-
-        #qrcode-container {
-            background: white;
-            padding: 15px;
-            border-radius: 16px;
-            margin: 20px auto;
-            display: inline-block;
-        }
-
-        video {
-            width: 100%;
-            border-radius: 16px;
-            background: #000;
-            margin-top: 20px;
-            border: 2px solid #334155;
-        }
-
-        .screen { display: none; }
-        .active { display: block; }
-        
-        .status-badge {
-            background: #1e293b;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            display: inline-block;
-            margin-bottom: 10px;
-            color: #38bdf8;
-        }
+        body { background: #000; color: #fff; font-family: sans-serif; text-align: center; margin: 0; padding: 20px; }
+        .card { background: #111; padding: 20px; border-radius: 20px; border: 1px solid #333; }
+        video { width: 100%; max-width: 400px; border-radius: 15px; margin-top: 15px; background: #222; }
+        #qrcode { background: white; padding: 10px; display: inline-block; border-radius: 10px; margin: 20px 0; }
+        .btn { background: #007bff; color: white; border: none; padding: 15px 30px; border-radius: 10px; font-size: 16px; width: 100%; cursor: pointer; }
+        .hidden { display: none; }
+        .status { color: #00ff00; font-size: 14px; margin-bottom: 10px; }
     </style>
 </head>
 <body>
 
-    <div class="container">
-        <div id="screen-landing" class="screen active">
-            <h1>Live Mirror</h1>
-            <p>One-way stream from User 1 to User 2</p>
-            <button class="btn" onclick="startHostFlow()">📡 Start Broadcasting</button>
+    <div class="card">
+        <h1>Pikachu Mirror</h1>
+
+        <div id="host-ui">
+            <p>User 1: Click to start your camera</p>
+            <button class="btn" onclick="initHost()">Start My Camera</button>
+            <div id="qrcode" class="hidden"></div>
+            <p id="id-label" class="hidden"></p>
+            <video id="local-preview" autoplay playsinline muted></video>
         </div>
 
-        <div id="screen-host" class="screen">
-            <div class="status-badge">🔴 SYSTEM LIVE</div>
-            <p>Show this QR to User 2:</p>
-            <div id="qrcode-container"></div>
-            <div id="host-id-display" style="font-family: monospace;">Connecting to network...</div>
-            <button class="btn" onclick="location.reload()" style="background:#ef4444; margin-top:30px;">End Broadcast</button>
-        </div>
-
-        <div id="screen-viewer" class="screen">
-            <div class="status-badge">📺 VIEWER MODE</div>
-            <p id="status-msg">Host found! Ready to connect.</p>
-            <button id="btn-connect" class="btn" onclick="connectToHost()">▶️ Click to Start Watching</button>
+        <div id="viewer-ui" class="hidden">
+            <div class="status">● Host Found!</div>
+            <button class="btn" onclick="initViewer()">Watch Live Feed</button>
             <video id="remote-video" autoplay playsinline controls></video>
         </div>
     </div>
 
     <script>
-        /** * ATTENTION TO DETAIL: 
-         * Including Google STUN servers helps the two devices 
-         * find each other through home Wi-Fi and 5G firewalls.
-         */
+        // 1. Setup Peer with Google Navigators (STUN)
         const peer = new Peer({
-            config: {
-                'iceServers': [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:stun2.l.google.com:19302' }
-                ]
-            }
-        }); 
+            config: { 'iceServers': [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] }
+        });
 
-        let myStream = null;
+        let myStream;
+        const urlParams = new URLSearchParams(window.location.search);
+        const hostId = urlParams.get('hostId');
 
-        // Auto-detect role based on URL parameter ?hostId=...
-        window.onload = () => {
-            const urlParams = new URLSearchParams(window.location.search);
-            const hostId = urlParams.get('hostId');
-            if (hostId) {
-                showScreen('screen-viewer');
-                window.targetHostId = hostId;
-            }
-        };
+        // Check if we are the Viewer (User 2)
+        if (hostId) {
+            document.getElementById('host-ui').classList.add('hidden');
+            document.getElementById('viewer-ui').classList.remove('hidden');
+        }
 
-        async function startHostFlow() {
+        // --- HOST LOGIC ---
+        async function initHost() {
             try {
-                // Try Screen Share first (Desktop/Laptop)
-                // If it fails (Mobile), it defaults to Camera
-                try {
-                    myStream = await navigator.mediaDevices.getDisplayMedia({ 
-                        video: { cursor: "always" }, 
-                        audio: true 
-                    });
-                } catch (e) {
-                    console.log("Mobile detected or screen share denied, using camera...");
-                    myStream = await navigator.mediaDevices.getUserMedia({ 
-                        video: { facingMode: "user" }, 
-                        audio: true 
-                    });
-                }
-
-                showScreen('screen-host');
-
+                // We use CAMERA only for maximum compatibility
+                myStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: true });
+                document.getElementById('local-preview').srcObject = myStream;
+                
                 peer.on('open', (id) => {
-                    document.getElementById('host-id-display').innerText = "ID: " + id;
-                    
-                    // Create the URL for User 2
-                    const smartLink = window.location.origin + window.location.pathname + '?hostId=' + id;
-                    
-                    // Clean and generate QR
-                    document.getElementById("qrcode-container").innerHTML = "";
-                    new QRCode(document.getElementById("qrcode-container"), {
-                        text: smartLink,
-                        width: 200,
-                        height: 200
-                    });
+                    const shareUrl = window.location.origin + window.location.pathname + '?hostId=' + id;
+                    document.getElementById('qrcode').classList.remove('hidden');
+                    document.getElementById('id-label').innerText = "ID: " + id;
+                    new QRCode(document.getElementById("qrcode"), shareUrl);
                 });
 
-                // When User 2 calls, answer with our video/audio stream
+                // Answer calls
                 peer.on('call', (call) => {
                     call.answer(myStream);
                 });
 
             } catch (err) {
-                alert("Permission Error: " + err.message);
-                location.reload();
+                alert("Camera Error: " + err.message);
             }
         }
 
-        function connectToHost() {
-            const hostId = window.targetHostId;
-            const btn = document.getElementById('btn-connect');
-            const video = document.getElementById('remote-video');
-            const status = document.getElementById('status-msg');
-
-            btn.style.display = 'none';
-            status.innerText = "Requesting video feed...";
-
+        // --- VIEWER LOGIC ---
+        function initViewer() {
             const call = peer.call(hostId, null);
+            const video = document.getElementById('remote-video');
 
-            call.on('stream', (remoteStream) => {
-                status.innerText = "Connected! Receiving Live Feed.";
-                video.srcObject = remoteStream;
-                
-                // Ensure video plays (handles browser auto-play restrictions)
-                video.play().catch(e => {
-                    status.innerText = "Tap the video to play sound.";
+            call.on('stream', (stream) => {
+                video.srcObject = stream;
+                // Important: Try to play automatically
+                video.play().catch(() => {
+                    console.log("Play button needed");
                 });
             });
-
-            peer.on('error', (err) => {
-                status.innerText = "Host offline or connection blocked.";
-                btn.style.display = 'block';
-            });
-        }
-
-        function showScreen(screenId) {
-            document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
-            document.getElementById(screenId).classList.add('active');
         }
     </script>
 </body>
