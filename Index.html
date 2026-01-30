@@ -3,91 +3,108 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Live Cam Mirror | Pikachu74</title>
+    <title>Pikachu Mirror Fix</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
-        body { background: #000; color: #fff; font-family: sans-serif; text-align: center; margin: 0; padding: 20px; }
-        .card { background: #111; padding: 20px; border-radius: 20px; border: 1px solid #333; }
-        video { width: 100%; max-width: 400px; border-radius: 15px; margin-top: 15px; background: #222; }
-        #qrcode { background: white; padding: 10px; display: inline-block; border-radius: 10px; margin: 20px 0; }
-        .btn { background: #007bff; color: white; border: none; padding: 15px 30px; border-radius: 10px; font-size: 16px; width: 100%; cursor: pointer; }
+        body { background: #0f172a; color: #fff; font-family: sans-serif; text-align: center; margin: 0; padding: 20px; }
+        .card { background: #1e293b; padding: 20px; border-radius: 20px; max-width: 400px; margin: auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        video { width: 100%; border-radius: 12px; margin-top: 15px; background: #000; }
+        #qrcode { background: white; padding: 10px; display: inline-block; border-radius: 10px; margin: 20px 0; min-height: 128px; min-width: 128px; }
+        .btn { background: #38bdf8; color: #0f172a; border: none; padding: 15px; border-radius: 10px; font-size: 16px; width: 100%; cursor: pointer; font-weight: bold; }
         .hidden { display: none; }
-        .status { color: #00ff00; font-size: 14px; margin-bottom: 10px; }
+        #log { font-size: 12px; color: #94a3b8; margin-top: 20px; text-align: left; background: #000; padding: 10px; border-radius: 8px; }
     </style>
 </head>
 <body>
 
     <div class="card">
-        <h1>Pikachu Mirror</h1>
-
-        <div id="host-ui">
-            <p>User 1: Click to start your camera</p>
-            <button class="btn" onclick="initHost()">Start My Camera</button>
-            <div id="qrcode" class="hidden"></div>
-            <p id="id-label" class="hidden"></p>
-            <video id="local-preview" autoplay playsinline muted></video>
+        <h2 id="title">Pikachu Live Mirror</h2>
+        
+        <div id="host-section">
+            <button class="btn" id="start-btn" onclick="startBroadcasting()">📡 Start My Camera</button>
+            <div id="qrcode"></div>
+            <p id="share-link" style="font-size: 10px; word-break: break-all;"></p>
+            <video id="local-video" autoplay playsinline muted></video>
         </div>
 
-        <div id="viewer-ui" class="hidden">
-            <div class="status">● Host Found!</div>
-            <button class="btn" onclick="initViewer()">Watch Live Feed</button>
+        <div id="viewer-section" class="hidden">
+            <button class="btn" onclick="watchStream()">▶️ Watch Live Feed</button>
             <video id="remote-video" autoplay playsinline controls></video>
         </div>
+
+        <div id="log">Status: Waiting for user...</div>
     </div>
 
     <script>
-        // 1. Setup Peer with Google Navigators (STUN)
+        const logEl = document.getElementById('log');
+        function logger(msg) { logEl.innerText = "Status: " + msg; console.log(msg); }
+
+        // 1. Setup Peer with Google STUN Servers
         const peer = new Peer({
-            config: { 'iceServers': [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] }
+            config: { 'iceServers': [{ urls: 'stun:stun.l.google.com:19302' }] }
         });
 
         let myStream;
         const urlParams = new URLSearchParams(window.location.search);
         const hostId = urlParams.get('hostId');
 
-        // Check if we are the Viewer (User 2)
+        // Check if we are the Viewer
         if (hostId) {
-            document.getElementById('host-ui').classList.add('hidden');
-            document.getElementById('viewer-ui').classList.remove('hidden');
+            document.getElementById('host-section').classList.add('hidden');
+            document.getElementById('viewer-section').classList.remove('hidden');
+            document.getElementById('title').innerText = "Joining Stream...";
+            logger("Ready to watch " + hostId);
         }
 
         // --- HOST LOGIC ---
-        async function initHost() {
+        async function startBroadcasting() {
+            document.getElementById('start-btn').disabled = true;
+            logger("Asking for camera permission...");
+            
             try {
-                // We use CAMERA only for maximum compatibility
-                myStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: true });
-                document.getElementById('local-preview').srcObject = myStream;
-                
+                myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                document.getElementById('local-video').srcObject = myStream;
+                logger("Camera active. Connecting to network...");
+
                 peer.on('open', (id) => {
-                    const shareUrl = window.location.origin + window.location.pathname + '?hostId=' + id;
-                    document.getElementById('qrcode').classList.remove('hidden');
-                    document.getElementById('id-label').innerText = "ID: " + id;
-                    new QRCode(document.getElementById("qrcode"), shareUrl);
+                    logger("Connected! Generating QR Code...");
+                    const link = window.location.origin + window.location.pathname + "?hostId=" + id;
+                    document.getElementById('share-link').innerText = link;
+                    
+                    // Clear and Make QR
+                    document.getElementById('qrcode').innerHTML = "";
+                    new QRCode(document.getElementById("qrcode"), {
+                        text: link,
+                        width: 128,
+                        height: 128
+                    });
                 });
 
-                // Answer calls
                 peer.on('call', (call) => {
+                    logger("User 2 is connecting...");
                     call.answer(myStream);
                 });
 
             } catch (err) {
-                alert("Camera Error: " + err.message);
+                logger("Error: " + err.message);
+                alert("Please enable camera permissions.");
             }
         }
 
         // --- VIEWER LOGIC ---
-        function initViewer() {
+        function watchStream() {
+            logger("Calling host...");
             const call = peer.call(hostId, null);
-            const video = document.getElementById('remote-video');
-
+            
             call.on('stream', (stream) => {
-                video.srcObject = stream;
-                // Important: Try to play automatically
-                video.play().catch(() => {
-                    console.log("Play button needed");
-                });
+                logger("Receiving video!");
+                const remoteVid = document.getElementById('remote-video');
+                remoteVid.srcObject = stream;
+                remoteVid.play();
             });
+
+            peer.on('error', (err) => logger("Connection error: " + err.type));
         }
     </script>
 </body>
