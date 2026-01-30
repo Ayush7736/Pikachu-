@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Live Mirror | Pikachu74</title>
+    <title>Live Mirror Pro | Pikachu74</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
@@ -36,6 +36,7 @@
             font-weight: 600;
             width: 100%;
             transition: transform 0.1s, background 0.2s;
+            margin-bottom: 10px;
         }
         .btn:active { transform: scale(0.98); }
         .btn:disabled { background-color: #334155; }
@@ -66,6 +67,7 @@
             font-size: 0.9rem;
             display: inline-block;
             margin-bottom: 10px;
+            color: #38bdf8;
         }
     </style>
 </head>
@@ -74,31 +76,44 @@
     <div class="container">
         <div id="screen-landing" class="screen active">
             <h1>Live Mirror</h1>
-            <p>Broadcast your screen or camera to someone else instantly.</p>
+            <p>One-way stream from User 1 to User 2</p>
             <button class="btn" onclick="startHostFlow()">📡 Start Broadcasting</button>
         </div>
 
         <div id="screen-host" class="screen">
-            <div class="status-badge">🔴 Live Hosting</div>
-            <p>Scan to watch on another device:</p>
+            <div class="status-badge">🔴 SYSTEM LIVE</div>
+            <p>Show this QR to User 2:</p>
             <div id="qrcode-container"></div>
-            <div id="host-id-display" style="font-family: monospace; color: #38bdf8;">Connecting...</div>
-            <button class="btn" onclick="location.reload()" style="background:#ef4444; margin-top:30px;">Stop Stream</button>
+            <div id="host-id-display" style="font-family: monospace;">Connecting to network...</div>
+            <button class="btn" onclick="location.reload()" style="background:#ef4444; margin-top:30px;">End Broadcast</button>
         </div>
 
         <div id="screen-viewer" class="screen">
-            <div class="status-badge">📺 Viewer Mode</div>
+            <div class="status-badge">📺 VIEWER MODE</div>
+            <p id="status-msg">Host found! Ready to connect.</p>
             <button id="btn-connect" class="btn" onclick="connectToHost()">▶️ Click to Start Watching</button>
             <video id="remote-video" autoplay playsinline controls></video>
-            <p id="status-msg">Ready to connect...</p>
         </div>
     </div>
 
     <script>
-        const peer = new Peer(); 
+        /** * ATTENTION TO DETAIL: 
+         * Including Google STUN servers helps the two devices 
+         * find each other through home Wi-Fi and 5G firewalls.
+         */
+        const peer = new Peer({
+            config: {
+                'iceServers': [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' }
+                ]
+            }
+        }); 
+
         let myStream = null;
 
-        // Auto-detect role on load
+        // Auto-detect role based on URL parameter ?hostId=...
         window.onload = () => {
             const urlParams = new URLSearchParams(window.location.search);
             const hostId = urlParams.get('hostId');
@@ -110,39 +125,46 @@
 
         async function startHostFlow() {
             try {
-                // ATTENTION TO DETAIL: Fallback logic
-                // If Screen Share fails (Mobile), it automatically tries Camera.
+                // Try Screen Share first (Desktop/Laptop)
+                // If it fails (Mobile), it defaults to Camera
                 try {
-                    myStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+                    myStream = await navigator.mediaDevices.getDisplayMedia({ 
+                        video: { cursor: "always" }, 
+                        audio: true 
+                    });
                 } catch (e) {
-                    console.log("Screen share rejected or not supported, trying camera...");
-                    myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                    console.log("Mobile detected or screen share denied, using camera...");
+                    myStream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { facingMode: "user" }, 
+                        audio: true 
+                    });
                 }
 
                 showScreen('screen-host');
 
                 peer.on('open', (id) => {
                     document.getElementById('host-id-display').innerText = "ID: " + id;
+                    
+                    // Create the URL for User 2
                     const smartLink = window.location.origin + window.location.pathname + '?hostId=' + id;
                     
-                    // Clear previous QR if any
+                    // Clean and generate QR
                     document.getElementById("qrcode-container").innerHTML = "";
                     new QRCode(document.getElementById("qrcode-container"), {
                         text: smartLink,
                         width: 200,
-                        height: 200,
-                        colorDark : "#000000",
-                        colorLight : "#ffffff",
-                        correctLevel : QRCode.CorrectLevel.H
+                        height: 200
                     });
                 });
 
+                // When User 2 calls, answer with our video/audio stream
                 peer.on('call', (call) => {
                     call.answer(myStream);
                 });
 
             } catch (err) {
-                alert("Could not access camera or screen: " + err.message);
+                alert("Permission Error: " + err.message);
+                location.reload();
             }
         }
 
@@ -153,18 +175,22 @@
             const status = document.getElementById('status-msg');
 
             btn.style.display = 'none';
-            status.innerText = "Connecting to host...";
+            status.innerText = "Requesting video feed...";
 
             const call = peer.call(hostId, null);
 
             call.on('stream', (remoteStream) => {
-                status.innerText = "Live Feed Connected!";
+                status.innerText = "Connected! Receiving Live Feed.";
                 video.srcObject = remoteStream;
-                video.play();
+                
+                // Ensure video plays (handles browser auto-play restrictions)
+                video.play().catch(e => {
+                    status.innerText = "Tap the video to play sound.";
+                });
             });
 
             peer.on('error', (err) => {
-                status.innerText = "Connection failed. Make sure the host is still live.";
+                status.innerText = "Host offline or connection blocked.";
                 btn.style.display = 'block';
             });
         }
